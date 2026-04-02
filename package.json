@@ -1,0 +1,9 @@
+{
+  "name": "a-stock-analysis",
+  "version": "1.0.0",
+  "description": "A股量化分析工具：个股25+指标分析 + 沪深300智能选股",
+  "main": "scripts/analyzer.py",
+  "scripts": {},
+  "keywords": ["stock", "analysis", "a-stock", "quantitative"],
+  "author": "AI-小龙虾"
+}
