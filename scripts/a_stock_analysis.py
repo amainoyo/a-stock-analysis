@@ -56,41 +56,62 @@ def get_secid(code, mktnum):
 
 # ─── 2. K线数据 ───────────────────────────────────────────────
 def fetch_kline(secid, beg="20250101", end="20991231", retries=3):
-    """从东方财富拉日K线数据，支持重试"""
-    url = (
-        "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-        f"?secid={secid}&fields1=f1,f2,f3,f4,f5"
-        f"&fields2=f51,f52,f53,f54,f55,f56,f57,f58"
-        f"&klt=101&fqt=1&beg={beg}&end={end}&smplmt=460&lmt=1000000"
-    )
+    """从腾讯财经拉日K线数据（前复权），支持重试"""
+    # secid格式: 1.600519(上海) / 0.002567(深圳) / 2.8xxxxx(北京)
+    # 转换为腾讯格式: sh600519 / sz002567
+    parts = secid.split(".")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid secid: {secid}")
+    mkt, code = parts[0], parts[1].zfill(6)
+    if mkt == "1":
+        sym = f"sh{code}"
+    elif mkt == "0":
+        sym = f"sz{code}"
+    elif mkt == "2":
+        # 北京市场用 bj 前缀
+        sym = f"bj{code}"
+    else:
+        sym = f"sz{code}"
+
+    url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+           f"?_var=kline_dayhfq&param={sym},day,,,{300},qfq")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://quote.eastmoney.com/",
-        "Accept": "application/json",
+        "Referer": "https://finance.qq.com/",
     }
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=20) as r:
-                raw = r.read()
+                raw = r.read().decode()
                 if not raw:
                     raise ValueError("empty response")
-                data = json.loads(raw)
-                klines = data.get("data", {}).get("klines", [])
-                result = []
-                for line in klines:
-                    parts = line.split(",")
+                data_str = raw[raw.index('=') + 1:]
+                data = json.loads(data_str)
+            qfqday = (data.get("data", {})
+                        .get(sym, {})
+                        .get("qfqday")
+                       or data.get("data", {}).get(sym, {}).get("day") or [])
+            result = []
+            for item in qfqday:
+                try:
+                    o, c, h, l, v = float(item[1]), float(item[2]), float(item[3]), float(item[4]), float(item[5])
+                    amount = v * (o + c) / 2  # 估算成交额
                     result.append({
-                        "date":   parts[0],
-                        "open":   float(parts[1]),
-                        "close":  float(parts[2]),
-                        "high":   float(parts[3]),
-                        "low":    float(parts[4]),
-                        "volume": int(parts[5]),
-                        "amount": float(parts[6]),
-                        "chg":    float(parts[7]) if len(parts) > 7 else 0.0,
+                        "date":   item[0],
+                        "open":   o,
+                        "close":  c,
+                        "high":   h,
+                        "low":    l,
+                        "volume": int(v),
+                        "amount": amount,
+                        "chg":    0.0,
                     })
+                except:
+                    continue
+            if result:
                 return result
+            raise ValueError(f"K线数据为空: {sym}")
         except Exception as e:
             if attempt < retries - 1:
                 import time
