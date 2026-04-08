@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-沪深300股票池数据获取脚本
-通过 Sina Finance 批量 API 获取K线数据，输出为 hs300_stock_pool.json
+A股股票池数据获取脚本
+通过 Sina Finance 批量报价 API + 腾讯财经 K线 API 获取数据
+
+注意: 本列表包含沪深两市主要股票（非精确沪深300成分）
+数据源: 腾讯财经 (https://finance.qq.com/)
 """
 import json
 import sys
