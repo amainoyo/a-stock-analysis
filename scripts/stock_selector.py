@@ -8,12 +8,14 @@ A 股选股器 - 5条件评分模型 v3（bug修复版）
   3. MA20使用真实20日均线，非估算值
   4. 数据源从Sina更换为腾讯财经API（稳定无456限流）
 
-条件：
-  1. RSI(14) 处于 30-45 区间（超卖反弹区）
-  2. MACD 绿柱连续收缩 ≥ 3天，且 DIF<0（空方动能衰竭）
-  3. 近3日均量 > 20日均量 × 1.3（放量确认）
-  4. KDJ 的 J 值从 < 20 位置转头向上（辅助确认）
+条件（严格版）：
+  1. RSI(14) 处于 25-40 区间（精准超卖）
+  2. MACD 绿柱连续收缩 ≥ 4天，且 DIF<0（底部充分蓄力）
+  3. 近3日均量 > 20日均量 × 1.5（真放量过滤）
+  4. KDJ 的 J 值从 < 15 位置转头向上（深度超卖反弹）
   5. 收盘价 > MA20（趋势不破位）
+
+评分≥3分方可入选（提高准确率）
 
 用法:
   python3 stock_selector.py [output.json]
@@ -266,39 +268,40 @@ def analyze_stock(sym: str, klines: List[Dict], quote: Dict) -> Optional[Dict[st
     reasons = []
     details = {}
 
-    # === 条件1: RSI(14) 处于 30-45 区间 ===
+    # === 条件1: RSI(14) 处于 25-40 区间（更精准超卖）===
     rsi14 = calc_rsi(closes, 14)
-    if rsi14 and 30 <= rsi14 <= 45:
+    if rsi14 and 25 <= rsi14 <= 40:
         score += 1
         reasons.append(f"RSI14={rsi14:.1f}")
     details['rsi14'] = rsi14
 
-    # === 条件2: MACD绿柱连续收缩>=3天 + DIF<0 ===
+    # === 条件2: MACD绿柱连续收缩>=4天 + DIF<0（底部蓄力更充分）===
     green_shrink, dif = check_macd_green_shrink(closes)
     details['macd_dif'] = dif
     details['macd_green_shrink'] = green_shrink
-    if green_shrink >= 3 and dif < 0:
+    if green_shrink >= 4 and dif < 0:
         score += 1
         reasons.append(f"MACD绿柱收缩{green_shrink}天")
 
-    # === 条件3: 近3日均量 > 20日均量 * 1.3 ===
+    # === 条件3: 近3日均量 > 20日均量 * 1.5（真放量过滤）===
     vol3  = sum(vols[-3:]) / 3
     vol20 = sum(vols[-20:]) / 20
     vol_ratio = vol3 / vol20 if vol20 > 0 else 0
     details['vol_ratio'] = vol_ratio
-    if vol20 > 0 and vol3 > vol20 * 1.3:
+    if vol20 > 0 and vol3 > vol20 * 1.5:
         score += 1
         reasons.append(f"量能放大{vol_ratio:.2f}x")
 
     # === 条件4: KDJ的J值从<20位置转头向上 ===
     K, D, J = calc_kdj(highs, lows, closes)
     details['kdj_j'] = J
+    # === 条件4: KDJ的J值从<15位置转头向上（更深超卖确认）===
     kdj_turnup = False
     if len(closes) >= 25:
         for t in range(max(9, len(closes)-8), len(closes)-1):
             k_prev, d_prev, j_prev = calc_kdj(highs[:t], lows[:t], closes[:t])
             k_curr, d_curr, j_curr = calc_kdj(highs[:t+1], lows[:t+1], closes[:t+1])
-            if j_prev < 20 and j_curr > j_prev:
+            if j_prev < 15 and j_curr > j_prev:
                 kdj_turnup = True
                 break
     if kdj_turnup:
@@ -375,14 +378,14 @@ def main():
     for sym, klines in kline_data.items():
         q = quotes.get(sym, {})
         r = analyze_stock(sym, klines, q)
-        if r and r['score'] >= 2:
+        if r and r['score'] >= 3:
             results.append(r)
 
     results.sort(key=lambda x: x['score'], reverse=True)
     print(f"\n{'='*65}")
     print(f"  A股智能选股器 v3 修复版")
     print(f"  筛选条件: RSI反弹 + MACD绿柱收缩 + 量能放大 + KDJ拐头 + MA20支撑")
-    print(f"  共扫描 {len(kline_data)} 只，符合条件 {len(results)} 只（评分≥2）")
+    print(f"  共扫描 {len(kline_data)} 只，符合条件 {len(results)} 只（评分≥3）")
     print(f"{'='*65}")
 
     if not results:
